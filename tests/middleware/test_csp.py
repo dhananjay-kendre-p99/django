@@ -53,6 +53,60 @@ class CSPMiddlewareTest(SimpleTestCase):
         self.assertIsNotNone(nonce)
         self.assertEqual(response[CSP.HEADER_ENFORCE], basic_policy)
 
+    @override_settings(SECURE_CSP={"script-src": [CSP.NONCE]})
+    def test_csp_nonce_only_directive_generates_nonce(self):
+        """
+        A directive whose only source is CSP.NONCE would be dropped from the
+        header when the nonce is never used, failing open. The middleware
+        generates the nonce eagerly so the directive is always included.
+        """
+        response = self.client.get("/csp-base/")
+        self.assertRegex(
+            response[CSP.HEADER_ENFORCE], r"^script-src 'nonce-[A-Za-z0-9_-]+'$"
+        )
+
+    @override_settings(SECURE_CSP={"script-src": CSP.NONCE})
+    def test_csp_nonce_only_directive_as_string(self):
+        """
+        A nonce-only directive given as a plain string is also kept by
+        generating the nonce eagerly.
+        """
+        response = self.client.get("/csp-base/")
+        self.assertRegex(
+            response[CSP.HEADER_ENFORCE], r"^script-src 'nonce-[A-Za-z0-9_-]+'$"
+        )
+
+    @override_settings(
+        SECURE_CSP=None, SECURE_CSP_REPORT_ONLY={"script-src": [CSP.NONCE]}
+    )
+    def test_csp_report_only_nonce_only_directive(self):
+        """
+        Nonce-only directives in the report-only policy also generate the
+        nonce eagerly.
+        """
+        response = self.client.get("/csp-base/")
+        self.assertNotIn(CSP.HEADER_ENFORCE, response)
+        self.assertRegex(
+            response[CSP.HEADER_REPORT_ONLY],
+            r"^script-src 'nonce-[A-Za-z0-9_-]+'$",
+        )
+
+    @override_settings(
+        SECURE_CSP={
+            "default-src": [CSP.SELF],
+            "script-src": [CSP.SELF, CSP.NONCE],
+        }
+    )
+    def test_csp_mixed_directives_stay_lazy(self):
+        """
+        Directives with sources other than CSP.NONCE do not trigger eager
+        nonce generation: an unused nonce is still omitted from the header.
+        """
+        response = self.client.get("/csp-base/")
+        self.assertEqual(
+            response[CSP.HEADER_ENFORCE], "default-src 'self'; script-src 'self'"
+        )
+
     @override_settings(SECURE_CSP=None, SECURE_CSP_REPORT_ONLY=basic_config)
     def test_csp_report_only_basic(self):
         """

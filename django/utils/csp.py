@@ -126,3 +126,28 @@ def build_policy(config, nonce=None):
         policy.append(f"{directive} {rendered_value}".rstrip())
 
     return "; ".join(policy)
+
+
+def _csp_policy_has_nonce_only_directive(policy):
+    """
+    Return True if any directive in the policy has CSP.NONCE as its only
+    source.
+
+    Such directives are omitted from the header when the nonce is never
+    generated, causing the browser to fall back to less restrictive
+    directives.
+    """
+    try:
+        policy_values = policy.values()
+    except AttributeError:
+        return False
+    for values in policy_values:
+        if values in (None, False) or values is True:
+            continue
+        if isinstance(values, set | list | tuple):
+            normalized = set(values)
+        else:
+            normalized = {values}
+        if normalized == {CSP.NONCE}:
+            return True
+    return False

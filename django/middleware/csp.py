@@ -1,6 +1,11 @@
 from django.conf import settings
 from django.middleware import MiddlewareMixin
-from django.utils.csp import CSP, LazyNonce, build_policy
+from django.utils.csp import (
+    CSP,
+    LazyNonce,
+    _csp_policy_has_nonce_only_directive,
+    build_policy,
+)
 
 
 def get_nonce(request):
@@ -30,6 +35,12 @@ class ContentSecurityPolicyMiddleware(MiddlewareMixin):
             # This allows for views to set their own CSP headers as needed.
             # An empty config means CSP headers are not added to the response.
             if config and header not in response:
+                if nonce is not None and _csp_policy_has_nonce_only_directive(config):
+                    # A directive whose only source is CSP.NONCE is omitted
+                    # from the header when the nonce is never used, failing
+                    # open. Generate the nonce eagerly so the directive is
+                    # always included and enforced.
+                    str(nonce)
                 response.headers[str(header)] = build_policy(config, nonce)
 
         return response

@@ -2,7 +2,13 @@ from secrets import token_urlsafe
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
-from django.utils.csp import CSP, LazyNonce, build_policy, generate_nonce
+from django.utils.csp import (
+    CSP,
+    LazyNonce,
+    _csp_policy_has_nonce_only_directive,
+    build_policy,
+    generate_nonce,
+)
 from django.utils.functional import empty
 
 basic_config = {
@@ -25,6 +31,36 @@ class CSPConstantsTests(SimpleTestCase):
         self.assertEqual(CSP.UNSAFE_INLINE, "'unsafe-inline'")
         self.assertEqual(CSP.WASM_UNSAFE_EVAL, "'wasm-unsafe-eval'")
         self.assertEqual(CSP.NONCE, "<CSP_NONCE_SENTINEL>")
+
+
+class CSPNonceOnlyDirectiveTests(SimpleTestCase):
+    def test_nonce_only_values(self):
+        cases = [
+            {"script-src": [CSP.NONCE]},
+            {"script-src": (CSP.NONCE,)},
+            {"script-src": {CSP.NONCE}},
+            {"script-src": CSP.NONCE},
+        ]
+        for policy in cases:
+            with self.subTest(policy=policy):
+                self.assertIs(_csp_policy_has_nonce_only_directive(policy), True)
+
+    def test_other_values(self):
+        cases = [
+            {"script-src": [CSP.SELF, CSP.NONCE]},
+            {"script-src": [CSP.SELF]},
+            {"script-src": "'nonce-abc'"},
+            {"script-src": True},
+            {"script-src": None},
+            {"script-src": False},
+            {},
+        ]
+        for policy in cases:
+            with self.subTest(policy=policy):
+                self.assertIs(_csp_policy_has_nonce_only_directive(policy), False)
+
+    def test_non_mapping_policy(self):
+        self.assertIs(_csp_policy_has_nonce_only_directive(None), False)
 
 
 class CSPBuildPolicyTest(SimpleTestCase):

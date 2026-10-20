@@ -623,13 +623,6 @@ configured:
   :class:`~django.middleware.csp.ContentSecurityPolicyMiddleware` is enabled,
   but ``django.template.context_processors.csp`` is not configured.
 
-* **security.W028**: Your Content Security Policy ``<setting>`` directive
-  ``'<directive>'`` has ``CSP.NONCE`` as its only source. If the nonce is not
-  used while rendering a response, the directive is silently dropped from the
-  policy, which may leave the policy more permissive than intended. Add a
-  fallback source such as ``CSP.SELF`` to the directive, or ensure the nonce
-  is used in every rendered response.
-
 Signals
 -------
 

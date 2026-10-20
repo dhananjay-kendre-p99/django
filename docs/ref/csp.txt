@@ -307,6 +307,12 @@ Django's nonce generation is **lazy**: the middleware only generates a nonce if
 ``{{ csp_nonce }}`` is accessed during template rendering. This avoids
 unnecessary work for pages that do not use nonces.
 
+The exception is a directive whose only source is
+:attr:`~django.utils.csp.CSP.NONCE`. Such a directive would be omitted from the
+header when the nonce is never used, causing the browser to fall back to less
+restrictive directives. The middleware therefore generates the nonce eagerly
+for nonce-only directives so they are always included in the header.
+
 However, because nonces must be unique per request, extra care is needed when
 using full-page caching (e.g., Django's cache middleware, CDN caching). Serving
 cached responses with previously generated nonces may result in reuse across
