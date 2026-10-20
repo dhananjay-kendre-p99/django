@@ -53,6 +53,53 @@ class CSPMiddlewareTest(SimpleTestCase):
         self.assertIsNotNone(nonce)
         self.assertEqual(response[CSP.HEADER_ENFORCE], basic_policy)
 
+    @override_settings(SECURE_CSP={"script-src": [CSP.NONCE]})
+    def test_csp_nonce_only_directive_emits_none(self):
+        """
+        A directive whose only source is CSP.NONCE is emitted as 'none' when
+        the nonce is never used, so the policy fails closed instead of
+        dropping the directive.
+        """
+        response = self.client.get("/csp-base/")
+        self.assertEqual(response[CSP.HEADER_ENFORCE], "script-src 'none'")
+
+    @override_settings(SECURE_CSP={"script-src": CSP.NONCE})
+    def test_csp_nonce_only_directive_as_string(self):
+        """
+        A nonce-only directive given as a plain string is also emitted as
+        'none' when the nonce is never used.
+        """
+        response = self.client.get("/csp-base/")
+        self.assertEqual(response[CSP.HEADER_ENFORCE], "script-src 'none'")
+
+    @override_settings(
+        SECURE_CSP=None, SECURE_CSP_REPORT_ONLY={"script-src": [CSP.NONCE]}
+    )
+    def test_csp_report_only_nonce_only_directive(self):
+        """
+        Nonce-only directives in the report-only policy are also emitted as
+        'none' when the nonce is never used.
+        """
+        response = self.client.get("/csp-base/")
+        self.assertNotIn(CSP.HEADER_ENFORCE, response)
+        self.assertEqual(response[CSP.HEADER_REPORT_ONLY], "script-src 'none'")
+
+    @override_settings(
+        SECURE_CSP={
+            "default-src": [CSP.SELF],
+            "script-src": [CSP.SELF, CSP.NONCE],
+        }
+    )
+    def test_csp_mixed_directive_omits_unused_nonce(self):
+        """
+        Directives with sources other than CSP.NONCE still have an unused
+        nonce sentinel removed without emitting 'none'.
+        """
+        response = self.client.get("/csp-base/")
+        self.assertEqual(
+            response[CSP.HEADER_ENFORCE], "default-src 'self'; script-src 'self'"
+        )
+
     @override_settings(SECURE_CSP=None, SECURE_CSP_REPORT_ONLY=basic_config)
     def test_csp_report_only_basic(self):
         """
