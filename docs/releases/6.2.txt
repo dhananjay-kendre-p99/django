@@ -327,6 +327,12 @@ Models
   ``ValidationError`` instead of being silently accepted, and surrounding
   whitespace is stripped.
 
+* With the default :doc:`fetch mode </topics/db/fetch-modes>`, accessing an
+  unloaded :class:`~django.db.models.GeneratedField` on a newly constructed
+  model instance with a primary key now raises ``AttributeError`` instead of
+  the model's :exc:`~django.db.models.Model.DoesNotExist` when no matching row
+  exists. Successful lookups by primary key are unchanged.
+
 Requests and responses
 ----------------------
 
