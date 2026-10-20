@@ -2,13 +2,7 @@ from secrets import token_urlsafe
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
-from django.utils.csp import (
-    CSP,
-    LazyNonce,
-    _csp_policy_has_nonce_only_directive,
-    build_policy,
-    generate_nonce,
-)
+from django.utils.csp import CSP, LazyNonce, build_policy, generate_nonce
 from django.utils.functional import empty
 
 basic_config = {
@@ -31,36 +25,6 @@ class CSPConstantsTests(SimpleTestCase):
         self.assertEqual(CSP.UNSAFE_INLINE, "'unsafe-inline'")
         self.assertEqual(CSP.WASM_UNSAFE_EVAL, "'wasm-unsafe-eval'")
         self.assertEqual(CSP.NONCE, "<CSP_NONCE_SENTINEL>")
-
-
-class CSPNonceOnlyDirectiveTests(SimpleTestCase):
-    def test_nonce_only_values(self):
-        cases = [
-            {"script-src": [CSP.NONCE]},
-            {"script-src": (CSP.NONCE,)},
-            {"script-src": {CSP.NONCE}},
-            {"script-src": CSP.NONCE},
-        ]
-        for policy in cases:
-            with self.subTest(policy=policy):
-                self.assertIs(_csp_policy_has_nonce_only_directive(policy), True)
-
-    def test_other_values(self):
-        cases = [
-            {"script-src": [CSP.SELF, CSP.NONCE]},
-            {"script-src": [CSP.SELF]},
-            {"script-src": "'nonce-abc'"},
-            {"script-src": True},
-            {"script-src": None},
-            {"script-src": False},
-            {},
-        ]
-        for policy in cases:
-            with self.subTest(policy=policy):
-                self.assertIs(_csp_policy_has_nonce_only_directive(policy), False)
-
-    def test_non_mapping_policy(self):
-        self.assertIs(_csp_policy_has_nonce_only_directive(None), False)
 
 
 class CSPBuildPolicyTest(SimpleTestCase):
@@ -170,6 +134,38 @@ class CSPBuildPolicyTest(SimpleTestCase):
     def test_config_with_empty_directive(self):
         policy = {"default-src": []}
         self.assertPolicyEqual(build_policy(policy), "")
+
+    def test_config_with_nonce_only_directive_without_nonce(self):
+        """
+        A directive whose only source is CSP.NONCE emits 'none' when the
+        nonce was never generated, so the policy fails closed instead of
+        dropping the directive and falling back to other directives.
+        """
+        policy = {
+            "default-src": [CSP.SELF],
+            "script-src": [CSP.NONCE],
+        }
+        self.assertPolicyEqual(
+            build_policy(policy), "default-src 'self'; script-src 'none'"
+        )
+
+    def test_config_with_nonce_only_directive_as_string(self):
+        policy = {"script-src": CSP.NONCE}
+        self.assertPolicyEqual(build_policy(policy), "script-src 'none'")
+
+    def test_config_with_nonce_only_directive_with_nonce(self):
+        policy = {"script-src": [CSP.NONCE]}
+        self.assertPolicyEqual(
+            build_policy(policy, nonce="abc123"), "script-src 'nonce-abc123'"
+        )
+
+    def test_config_with_mixed_directive_without_nonce(self):
+        """
+        Directives with sources other than CSP.NONCE still have the unused
+        nonce sentinel removed without emitting 'none'.
+        """
+        policy = {"default-src": [CSP.SELF, CSP.NONCE]}
+        self.assertPolicyEqual(build_policy(policy), "default-src 'self'")
 
 
 class LazyNonceTests(SimpleTestCase):
