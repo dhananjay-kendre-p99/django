@@ -90,7 +90,7 @@ class CSPMiddlewareTest(SimpleTestCase):
             "script-src": [CSP.SELF, CSP.NONCE],
         }
     )
-    def test_csp_mixed_directives_stay_lazy(self):
+    def test_csp_mixed_directive_omits_unused_nonce(self):
         """
         Directives with sources other than CSP.NONCE still have an unused
         nonce sentinel removed without emitting 'none'.
