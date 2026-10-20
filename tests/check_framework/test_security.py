@@ -919,7 +919,5 @@ class CheckCSPNonceOnlyDirectivesTests(SimpleTestCase):
                     self.assertEqual(base.check_csp_nonce_only_directives(None), [])
 
     def test_no_warning_without_csp_middleware(self):
-        with self.settings(
-            MIDDLEWARE=[], SECURE_CSP={"script-src": [CSP.NONCE]}
-        ):
+        with self.settings(MIDDLEWARE=[], SECURE_CSP={"script-src": [CSP.NONCE]}):
             self.assertEqual(base.check_csp_nonce_only_directives(None), [])
