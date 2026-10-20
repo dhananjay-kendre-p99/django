@@ -159,6 +159,18 @@ W027 = Warning(
     id="security.W027",
 )
 
+W028 = Warning(
+    "Your Content Security Policy %s directive %r has CSP.NONCE as its only "
+    "source. If the nonce is not used while rendering a response, the "
+    "directive is silently dropped from the policy, which may leave the "
+    "policy more permissive than intended.",
+    hint=(
+        "Add a fallback source such as CSP.SELF to the directive, or ensure "
+        "the nonce is used in every rendered response."
+    ),
+    id="security.W028",
+)
+
 
 def _security_middleware():
     return "django.middleware.security.SecurityMiddleware" in settings.MIDDLEWARE
@@ -188,6 +200,26 @@ def _csp_policy_contains_nonce(policy):
         except TypeError:
             pass
     return False
+
+
+def _csp_policy_nonce_only_directives(policy):
+    """Yield directives whose only source is CSP.NONCE.
+
+    Mirrors the value normalization in django.utils.csp.build_policy().
+    """
+    try:
+        items = policy.items()
+    except AttributeError:
+        return
+    for directive, values in items:
+        if values is True or values is None or values is False:
+            continue
+        if isinstance(values, set):
+            values = sorted(values)
+        elif not isinstance(values, list | tuple):
+            values = [values]
+        if values and all(value == CSP.NONCE for value in values):
+            yield directive
 
 
 def _csp_context_processor_configured():
@@ -360,3 +392,21 @@ def check_csp_nonce_context_processor(app_configs, **kwargs):
     ):
         return [W027]
     return []
+
+
+@register(Tags.security)
+def check_csp_nonce_only_directives(app_configs, **kwargs):
+    """
+    Warn about CSP directives whose only source is CSP.NONCE.
+
+    Such directives are silently dropped from the policy when the nonce is
+    not used while rendering a response, failing open (#37395).
+    """
+    if not _csp_middleware():
+        return []
+    warnings = []
+    for name in ("SECURE_CSP", "SECURE_CSP_REPORT_ONLY"):
+        policy = getattr(settings, name, None)
+        for directive in _csp_policy_nonce_only_directives(policy):
+            warnings.append(Warning(W028.msg % (name, directive), id=W028.id))
+    return warnings

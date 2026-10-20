@@ -847,3 +847,79 @@ class CheckSecureCSPTests(SimpleTestCase):
             with self.subTest(settings_overrides=settings_overrides):
                 with self.settings(**settings_overrides):
                     self.assertEqual(base.check_csp_nonce_context_processor(None), [])
+
+
+class CheckCSPNonceOnlyDirectivesTests(SimpleTestCase):
+    """Tests for the CSP nonce-only directives check function (#37395)."""
+
+    csp_middleware = ["django.middleware.csp.ContentSecurityPolicyMiddleware"]
+
+    def test_nonce_only_directive_warns(self):
+        cases = [
+            ({"script-src": [CSP.NONCE]}, "script-src"),
+            ({"script-src": CSP.NONCE}, "script-src"),  # Single string value.
+            ({"script-src": (CSP.NONCE,)}, "script-src"),  # Tuple.
+            ({"script-src": [CSP.NONCE, CSP.NONCE]}, "script-src"),  # Repeated.
+        ]
+        for policy, directive in cases:
+            with self.subTest(policy=policy):
+                warning = Warning(
+                    base.W028.msg % ("SECURE_CSP", directive), id=base.W028.id
+                )
+                with self.settings(MIDDLEWARE=self.csp_middleware, SECURE_CSP=policy):
+                    self.assertEqual(
+                        base.check_csp_nonce_only_directives(None), [warning]
+                    )
+
+    def test_report_only_setting_warns(self):
+        warning = Warning(
+            base.W028.msg % ("SECURE_CSP_REPORT_ONLY", "script-src"),
+            id=base.W028.id,
+        )
+        with self.settings(
+            MIDDLEWARE=self.csp_middleware,
+            SECURE_CSP_REPORT_ONLY={"script-src": [CSP.NONCE]},
+        ):
+            self.assertEqual(base.check_csp_nonce_only_directives(None), [warning])
+
+    def test_multiple_nonce_only_directives_warn(self):
+        with self.settings(
+            MIDDLEWARE=self.csp_middleware,
+            SECURE_CSP={"script-src": [CSP.NONCE], "style-src": [CSP.NONCE]},
+        ):
+            self.assertEqual(
+                base.check_csp_nonce_only_directives(None),
+                [
+                    Warning(
+                        base.W028.msg % ("SECURE_CSP", "script-src"),
+                        id=base.W028.id,
+                    ),
+                    Warning(
+                        base.W028.msg % ("SECURE_CSP", "style-src"),
+                        id=base.W028.id,
+                    ),
+                ],
+            )
+
+    def test_no_warning_for_safe_configs(self):
+        safe_policies = [
+            None,
+            {},
+            {"script-src": [CSP.SELF, CSP.NONCE]},  # Has a fallback source.
+            {"script-src": [CSP.SELF]},
+            {"script-src": []},
+            {"script-src": None},
+            {"script-src": False},
+            {"upgrade-insecure-requests": True},
+            "not-a-dict",  # Handled by security.E026.
+        ]
+        for policy in safe_policies:
+            with self.subTest(policy=policy):
+                with self.settings(MIDDLEWARE=self.csp_middleware, SECURE_CSP=policy):
+                    self.assertEqual(base.check_csp_nonce_only_directives(None), [])
+
+    def test_no_warning_without_csp_middleware(self):
+        with self.settings(
+            MIDDLEWARE=[], SECURE_CSP={"script-src": [CSP.NONCE]}
+        ):
+            self.assertEqual(base.check_csp_nonce_only_directives(None), [])
