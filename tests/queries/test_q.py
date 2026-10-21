@@ -1,4 +1,5 @@
 from datetime import datetime
+from unittest import skipUnless
 
 from django.core.exceptions import FieldError
 from django.db import connection
@@ -396,3 +397,36 @@ class QCheckTests(TestCase):
 
         # We must leave the connection in a usable state (#35712).
         self.assertTrue(connection.is_usable())
+
+    def missing_column(self, name):
+        # SQLite treats unknown double-quoted identifiers as string literals.
+        if connection.vendor == "sqlite":
+            return f"[{name}]"
+        return connection.ops.quote_name(name)
+
+    def test_database_error_logged_escaped(self):
+        column = self.missing_column("price\nother")
+        q = Q(RawSQL(f"{column} > %s", params=(20,), output_field=BooleanField()))
+        prefix = f"Got a database error calling check() on {q!r}: "
+        with self.assertLogs("django.db.models", "WARNING") as cm:
+            self.assertIs(q.check({"price": 10}), True)
+        message = cm.records[0].getMessage()
+        self.assertIs(message.startswith(prefix), True)
+        # Some backends upper-case quoted identifiers in error messages.
+        error = message.removeprefix(prefix).lower()
+        # MySQL error messages are already escaped before being logged.
+        self.assertRegex(error, r"price\\+nother")
+        self.assertNotIn("\n", error)
+
+    @skipUnless(connection.vendor == "sqlite", "SQLite specific test.")
+    def test_database_error_logged_trimmed(self):
+        column = self.missing_column("x" * 5000)
+        q = Q(RawSQL(f"{column} > %s", params=(20,), output_field=BooleanField()))
+        prefix = f"Got a database error calling check() on {q!r}: "
+        with self.assertLogs("django.db.models", "WARNING") as cm:
+            self.assertIs(q.check({"price": 10}), True)
+        error = cm.records[0].getMessage().removeprefix(prefix)
+        self.assertEqual(
+            error,
+            "no such column: " + "x" * 4080 + "… <trimmed 920 chars out of 5016>",
+        )

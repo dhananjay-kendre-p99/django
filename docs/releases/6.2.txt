@@ -184,7 +184,10 @@ Internationalization
 Logging
 ~~~~~~~
 
-* ...
+* The warning logged when a database error occurs while validating a
+  :class:`~django.db.models.CheckConstraint` or a conditional
+  :class:`~django.db.models.UniqueConstraint` now escapes the error message and
+  trims it to 4096 characters.
 
 Management Commands
 ~~~~~~~~~~~~~~~~~~~
