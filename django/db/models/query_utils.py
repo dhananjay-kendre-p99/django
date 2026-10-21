@@ -277,6 +277,11 @@ class DeferredAttribute:
                     )
 
                 instance._state.fetch_mode.fetch(self, instance)
+                # If the field is still absent after fetch (e.g., the accessed
+                # instance was deleted), fall back to fetch_one to raise
+                # DoesNotExist.
+                if field_name not in data:
+                    self.fetch_one(instance)
             else:
                 data[field_name] = val
         return data[field_name]
@@ -299,13 +304,22 @@ class DeferredAttribute:
     def fetch_many(self, instances):
         attname = self.field.attname
         db = instances[0]._state.db
+        # Only fetch for instances that don't already have the field loaded
+        # and have a primary key.
+        missing_instances = [
+            i for i in instances if attname not in i.__dict__ and i._is_pk_set()
+        ]
+        if not missing_instances:
+            return
         value_by_pk = (
             self.field.model._base_manager.using(db)
             .values_list(attname, flat=True)
-            .in_bulk({i.pk for i in instances})
+            .in_bulk({i.pk for i in missing_instances})
         )
-        for instance in instances:
-            setattr(instance, attname, value_by_pk[instance.pk])
+        for instance in missing_instances:
+            # Only set the value if the row still exists in the database.
+            if instance.pk in value_by_pk:
+                setattr(instance, attname, value_by_pk[instance.pk])
 
 
 class class_or_instance_method:
